@@ -1,0 +1,297 @@
+---
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+Set the transition_matrix and emission_matrix, according to the instructions
+
+```{r}
+#########################################################################################################
+# TASK 1
+#########################################################################################################
+
+library(HMM)
+
+# Probabilty matrix of the hiddes states.
+transition_matrix <- c(0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0.5,
+                       0.5, 0.5, 0, 0, 0, 0, 0, 0, 0, 0,
+                       0, 0.5, 0.5, 0, 0, 0, 0, 0, 0, 0,
+                       0, 0, 0.5, 0.5, 0, 0, 0, 0, 0, 0,
+                       0, 0, 0, 0.5, 0.5, 0, 0, 0, 0, 0,
+                       0, 0, 0, 0, 0.5, 0.5, 0, 0, 0, 0,
+                       0, 0, 0, 0, 0, 0.5, 0.5, 0, 0, 0,
+                       0, 0, 0, 0, 0, 0, 0.5, 0.5, 0, 0,
+                       0, 0, 0, 0, 0, 0, 0, 0.5, 0.5, 0,
+                       0, 0, 0, 0, 0, 0, 0, 0, 0.5, 0.5)
+
+transition_matrix <- matrix(data = transition_matrix, nrow = 10, ncol = 10)
+
+# Probabilty matrix of the observation states.
+emission_matrix <- c(0.2, 0.2, 0.2, 0, 0, 0, 0, 0, 0.2, 0.2,
+                     0.2, 0.2, 0.2, 0.2, 0, 0, 0, 0, 0, 0.2,
+                     0.2, 0.2, 0.2, 0.2, 0.2, 0, 0, 0, 0, 0,
+                     0, 0.2, 0.2, 0.2, 0.2, 0.2, 0, 0, 0, 0,
+                     0, 0, 0.2, 0.2, 0.2, 0.2, 0.2, 0, 0, 0,
+                     0, 0, 0, 0.2, 0.2, 0.2, 0.2, 0.2, 0, 0,
+                     0, 0, 0, 0, 0.2, 0.2, 0.2, 0.2, 0.2, 0,
+                     0, 0, 0, 0, 0, 0.2, 0.2, 0.2, 0.2, 0.2,
+                     0.2, 0, 0, 0, 0, 0, 0.2, 0.2, 0.2, 0.2,
+                     0.2, 0.2, 0, 0, 0, 0, 0, 0.2, 0.2, 0.2)
+emission_matrix <- matrix(data = emission_matrix,nrow = 10,ncol = 10)
+
+possible_states <- rep(1:10)
+possible_observations <- rep(1:10)
+
+#P(Z^0)
+starting_probabilities <- rep(0.1,10)
+
+HMM <- initHMM(States = possible_states, Symbols = possible_observations, startProbs = starting_probabilities, transProbs = transition_matrix, emissionProbs = emission_matrix)
+
+```
+
+Simulate a hidden markov model
+
+```{r}
+#########################################################################################################
+# TASK 2
+#########################################################################################################
+
+steps <- 100
+HMM.sim <- simHMM(hmm = HMM, length = steps)
+```
+
+
+Implement functions and calculate results.
+
+```{r}
+library(HMM)
+
+get_alpha <- function(states, observation, transition_matrix, emission_matrix, previous_alpha) {
+  alpha <- NA
+  
+  for (Z_t in states)
+  {
+    # Probability of observation, given 'Z_t'
+    observation_probabilities <- emission_matrix[Z_t,observation]
+
+    # Probability of transition from last state 'Z_t-1' to current state 'Z_t', multiplied with the probability of 'Z_t-1' 
+    state_probabilities <- sum(
+      sapply(states, function(z) {
+        previous_alpha[z] * transition_matrix[z, Z_t]
+        }))
+    
+    # Probability of current state 'Z_t'
+    alpha[Z_t] <- observation_probabilities * state_probabilities 
+  }
+  return (alpha);
+}
+
+get_beta <- function(states, next_observation, transition_matrix, emission_matrix, beta_next) {
+  
+  beta <- NA
+  
+  for (Z_t in states) {
+    
+    #Probability of current state 'Z_t', given probabilities of next state
+    beta[Z_t] <- sum(
+      sapply(states, function(z) {
+      beta_next[z] * emission_matrix[z, next_observation] * transition_matrix[Z_t,z]
+      })
+    )
+  }
+  return (beta)
+}
+
+forward_backward <- function(states, observations, transition_matrix, emission_matrix, n=steps)
+{
+  
+  alpha <- matrix(NA, nrow = n, ncol = length(states))
+  beta <- matrix(NA, nrow = n, ncol = length(states))
+  
+  # Initial probabilities
+  alpha[1, ] <- emission_matrix[, observations[1]] * starting_probabilities
+  beta[n, ] <- 1
+  
+  # Calculate probabilities in following states
+  for (t in 2:n) {
+    alpha[t,] <- get_alpha(states = states, observation = observations[t], transition_matrix = transition_matrix, emission_matrix = emission_matrix, previous_alpha = alpha[t-1,])
+  }
+  
+  # Calculate probabilities in previous states
+  for (t in (n-1):1) {
+    beta[t,] <- get_beta(states = states, next_observation = observations[t+1], transition_matrix = transition_matrix, emission_matrix = emission_matrix, beta_next = beta[t+1,])
+  }
+  
+  return (list(alpha=alpha,beta=beta))
+}
+
+filtering <- function(alpha,n = steps) {
+  result <- matrix(NA, nrow = n, ncol = ncol(alpha))
+  
+  # Normalize the probabilities in each step
+  for (t in 1:n)
+  {
+    result[t,] <- alpha[t,]/(sum(alpha[t,]))
+  }
+  return (result)
+}
+
+smoothing <- function(alpha, beta)
+{
+  result <- matrix(NA, nrow = steps, ncol = ncol(alpha))
+  
+    # Normalize the probabilities in each step
+  for (t in 1:steps)
+  {
+   result[t,] <- alpha[t,]*beta[t,]/(sum(alpha[t,]*beta[t,]))
+  }
+  return (result)
+}
+
+viterbi_own <- function(states, observations, transition_matrix, emission_matrix) {
+
+  omega <- matrix(NA,nrow = steps,ncol = length(states))
+  psi <- matrix(NA,nrow = steps,ncol = length(states))
+  
+  
+  # Log(probabilities of X^0 given Z^0)
+  omega[1,] <- log(t(starting_probabilities)) + log(emission_matrix[,observations[1]])
+
+  for (t in 1:(steps-1)) {
+    
+      temp <- matrix(NA,nrow = length(states),ncol = length(states))
+      
+      
+    for (state in states) {
+      
+#Values corresponding to probabilites of next state Z^t+1 (cols) given probabilities of current state Z_t (rows)
+      temp[state,] <- log(transition_matrix[state,]) + omega[t,state]
+    }
+      
+    for (state in states) {
+    
+      # Moste probable state Z^t, given probabilities of state Z^t+1
+    psi[t,state] <- which.max(temp[,state])
+    
+    # Values corresponding to the probablities of next state given observation and probabilites of current state 
+    omega[t+1,state] <- log(emission_matrix[state,observations[t+1]]) + max(temp[,state])
+    }
+      
+  }
+
+  Z <- NA
+  
+  #Moste probable final state
+  Z[steps] <- which.max(omega[steps, ])
+
+  for (t in (steps-1):0) {
+    
+    #Given moste probable state in Z^t+1, set the moste probable previous state
+    Z[t] <- psi[t, Z[t+1]]
+  }
+  
+  return(Z)
+}
+
+accuracy <- function(prediction, true) {
+  table <- table(prediction, true)
+  accuracy <- sum(diag(table))/sum(table)
+  return (accuracy)
+}
+
+run <- function()
+{
+  
+fb <<- forward_backward(states = possible_states, observations = HMM.sim$observation, transition_matrix = transition_matrix, emission_matrix = emission_matrix)
+filtering_result <<- filtering(fb$alpha)
+smoothing_result <<- smoothing(fb$alpha,fb$beta)
+viterbi_result <<- viterbi_own(states = possible_states, observations = HMM.sim$observation, transition_matrix = transition_matrix, emission_matrix = emission_matrix)
+}
+
+
+#########################################################################################################
+# TASK 3
+#########################################################################################################
+
+#See function above
+run()
+
+alpha <- exp(forward(HMM, HMM.sim$observation))
+
+
+
+
+
+```
+
+
+```{r}
+#########################################################################################################
+# TASK 4
+#########################################################################################################
+
+# Predict based on the highest probability
+filtering_prediction <- apply(X = filtering_result, MARGIN = 1, FUN = which.max)
+smoothing_prediction<- apply(X = smoothing_result, MARGIN = 1, FUN = which.max)
+
+# Calculate accuracy from prediction
+cat("filter accuracy in first case: ", accuracy(prediction = filtering_prediction,true = HMM.sim$states), "\n")
+cat("smoothig accuracy in first case: ", smoothing_accuracy <- accuracy(prediction = smoothing_prediction,true = HMM.sim$states),"\n\n")
+```
+
+
+```{r}
+#########################################################################################################
+# TASK 5
+#########################################################################################################
+
+filtering_accuracies <- matrix(nrow = 50)
+smoothing_accuracies <- matrix(nrow = 50)
+
+for (i in 1:nrow(filtering_accuracies))
+{
+  HMM.sim <- simHMM(hmm = HMM, length = steps)
+  run()
+  filtering_prediction <- apply(X = filtering_result, MARGIN = 1, FUN = which.max)
+  smoothing_prediction<- apply(X = smoothing_result, MARGIN = 1, FUN = which.max)
+  filtering_accuracies[i] <- accuracy(prediction = filtering_prediction,true = HMM.sim$states)
+  smoothing_accuracies[i] <- smoothing_accuracy <- accuracy(prediction = smoothing_prediction,true = HMM.sim$states)
+}
+
+cat("average filtering accuracy in", nrow(filtering_accuracies), "cases :", mean(filtering_accuracies), "\n")
+cat("average smoothing accuracy in", nrow(smoothing_accuracies), "cases :", mean(smoothing_accuracies), "\n")
+```
+
+The reason for the smoothing accuracy in general is more accurate is that it uses all observations, including observations in the future, which the filtering function doesn't.
+
+
+```{r}
+#########################################################################################################
+# TASK 6
+#########################################################################################################
+
+library(entropy)
+
+run()
+
+ent <- NA
+
+for (i in 1:nrow(filtering_result)) {
+ent[i] <- entropy.empirical(filtering_result[i,])
+}
+
+plot(x = ent,type = 'l',main = "Entropy for each time step",ylab = "Entropy",xlab = "")
+```
+As the plot shows, the entropy does not convert towards 0, which would have been the case if the predictions became more accurate the more observations you have.
+
+```{r}
+#########################################################################################################
+# TASK 7
+#########################################################################################################
+
+Z_101 <- filtering_result[100, ] %*% transition_matrix
+
+```
+

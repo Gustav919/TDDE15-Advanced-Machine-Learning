@@ -1,0 +1,346 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+
+
+
+Functions:
+```{r}
+SquaredExpKernel <- function(sigmaF=1,ell=1){
+  
+  rval <- function(x1,x2) {
+    n1 <- length(x1)
+    n2 <- length(x2)
+    K <- matrix(NA,n1,n2)
+    for (i in 1:n2){
+    K[,i] <- sigmaF^2*exp(-0.5*( (x1-x2[i])/ell)^2 )
+  }
+  return(K)
+  }
+  class(rval) <- "kernel"
+  return(rval)
+}
+
+
+periodicKernel <- function(sigmaF=1,ell1=1, ell2=1, d=1){
+  
+  rval <- function(x1,x2) {
+    
+    return (
+      (sigmaF^2)*exp(-2*(sin(pi*abs(x1 - x2)/d)^2)/(ell1^2))*exp(-0.5*(abs(x1 - x2)/ell2)^2)
+    )
+  }
+  class(rval) <- "kernel"
+  return(rval)
+}
+
+posteriorGP <- function(x, y, xstar, sigmaNoise, k) {
+  
+  n <- length(x)
+  
+  k_x_x <- k(x1 = x, x2 = x)
+  k_x_xstar <- k(x1 = x, x2 = xstar)
+  k_xstar_xstar <- k(x1 = xstar, x2 = xstar)
+
+  #L := cholesky(K + sigmaNoise*I)
+  L <- t(chol(k_x_x + sigmaNoise^2*diag(n)))
+  
+  # alpha := L^T\(L\y) <==>
+  # L * L^T * alpha = L * y <==> 
+  # alpha = (L * L^T)^-1 * y
+  alpha <- solve(a = t(L),b = solve(a = L, b=y))
+  
+  #fstar := kstar^T*alpha, where fstar is posterior mean and kstar is the vector of covariances between the test point and the n training points
+  fstar <- t(k_x_xstar) %*% alpha
+  
+  #v := L\kstar  <==>
+  # L * v = kstar <==>
+  # v = L^-1 * kstar
+  v <- solve(a = L, b = k_x_xstar)
+  
+  # vstar := k_xstar_xstar - v^t*v, where vstar is posterior variance of all x and xstar
+  vstar <- k_xstar_xstar - t(v) %*% v
+  
+ 
+  # Returns diag(vstar) to get the variance of function values given the same input values 
+  return (list(mean = fstar, variance = diag(vstar)))
+}
+
+
+
+visualize <- function(mean, variance = NULL, observations, xstar, col = "white") {
+  
+        if(!is.null(variance)){
+          
+        confidence_interval <- data.frame(upper = mean + 1.96*sqrt(variance),lower = mean - 1.96*sqrt(variance))
+          
+          ylim <- c(min(min(confidence_interval$lower),min(observations$y)), c(max(max(confidence_interval$upper),max(observations$y))))
+        par(bg = col)
+        plot(x = xstar, y = mean, type = 'l',col = 'red',ylab = 'Posterior mean',xlab = 'Interval',ylim = ylim)
+    
+        lines(x = xstar, y = confidence_interval$upper, type ='l', col = 'blue')
+        lines(x = xstar, y = confidence_interval$lower, type ='l', col = 'blue')
+        } else {
+          
+        par(bg = col)
+          
+          ylim <- c(min(observations$y), max(observations$y))
+
+        plot(x = xstar, y = mean, type = 'l',col = 'red',ylab = 'Posterior mean',xlab = 'Interval',ylim = ylim)
+          
+        }
+  
+  # Add observations as points
+   points(x = observations$x,y = observations$y,col = 'black',pch = 20)
+
+}
+```
+
+
+```{r}
+#############################################################
+#############################################################
+########################   Task 1    ########################
+#############################################################
+
+library(mvtnorm)
+
+# 1.2
+x <- c(0.4)
+y <- c(0.719)
+observations <- data.frame(x = x, y = y)
+
+n <- 50
+xstar <- seq(from = -1, to = 1, length.out = n)
+
+kernelFunc = SquaredExpKernel(sigmaF = 1, ell = 0.3)
+
+pgp <- posteriorGP(x = x, y = y, xstar = xstar, sigmaNoise = 0.1, k = kernelFunc)
+
+visualize(mean = pgp$mean, variance = pgp$variance, observations = observations, xstar = xstar)
+
+
+# 1.3
+
+x <- c(0.4, -0.6)
+y <- c(0.719, -0.044)
+observations <- data.frame(x = x, y = y)
+
+pgp <- posteriorGP(x = x, y = y, xstar = xstar, sigmaNoise = 0.1, k = kernelFunc)
+
+visualize(mean = pgp$mean, variance = pgp$variance, observations = observations, xstar = xstar)
+
+
+# 1.4
+
+x <- c(-1.0, -0.6, -0.2, 0.4, 0.8)
+y <- c(0.768, -0.044, -0.940, 0.719, -0.664)
+observations <- data.frame(x = x, y = y)
+
+pgp <- posteriorGP(x = x, y = y, xstar = xstar, sigmaNoise = 0.1, k = kernelFunc)
+
+visualize(mean = pgp$mean, variance = pgp$variance, observations = observations, xstar = xstar)
+
+# 1.4
+
+l <- 1
+
+x <- c(-1.0, -0.6, -0.2, 0.4, 0.8)
+y <- c(0.768, -0.044, -0.940, 0.719, -0.664)
+observations <- data.frame(x = x, y = y)
+
+kernelFunc <- SquaredExpKernel(sigmaF = 1, ell = 1)
+
+pgp <- posteriorGP(x = x, y = y, xstar = xstar, sigmaNoise = 0.1, k = kernelFunc)
+
+visualize(mean = pgp$mean, variance = pgp$variance, observations = observations, xstar = xstar)
+```
+
+
+```{r}
+#############################################################
+########################   Task 2    ########################
+#############################################################
+
+library(kernlab)
+
+data <- read.csv("https://raw.githubusercontent.com/STIMALiU/AdvMLCourse/master/GaussianProcess/Code/TempTullinge.csv", header=TRUE, sep=";")
+
+time <- c(seq(1,nrow(data), by =5))
+time_all <- c(seq(1,nrow(data)))
+day <- rep(x = seq(from = 1,to = 365,by = 5),times = nrow(data)/365)
+
+
+# 2.1
+x <- c(1,3,4)
+xstar <- c(2,3,4)
+
+kernelFunc = SquaredExpKernel()
+
+
+evaluate <- kernelFunc(x1=1,x2=2) # Evaluating the kernel in x=1, x'=2
+
+# Computing the whole covariance matrix K from the kernel.
+#K <- kernelMatrix(kernel = kernelFunc, x = x, y = xstar) 
+
+K <- kernelMatrix(x = x,y = xstar,kernel = kernelFunc)# So this is K(X,Xstar)
+
+
+#2.2
+temperature <- data$temp[time]
+
+fit <- lm(temperature ~ time + time^2)
+
+sigma_n <- sd(fit$residuals)
+
+kernelFunc = SquaredExpKernel(sigmaF = 20, ell = 0.2)
+
+# Fit Gaussian Process regression
+gp <- gausspr(x = time, y = temperature,kernel = kernelFunc,var = sigma_n^2)
+
+prediction <- predict(gp, time)
+
+observations <- data.frame(x=time, y = temperature)
+
+visualize(mean = prediction, observations = observations, xstar = time)
+
+
+# 2.3
+fit <- lm(temperature ~ scale(time) + scale(time)^2)
+
+sigma_n <- sd(fit$residuals)
+
+
+pgp <- posteriorGP(x = scale(time), y = temperature, xstar = scale(time_all), sigmaNoise = sigma_n, k = kernelFunc)
+
+visualize(mean = prediction, variance = pgp$variance[time], observations = observations, xstar = time)
+
+
+# 2.4
+
+# Fit Gaussian Process regression
+gp <- gausspr(x = day, y = temperature,kernel = kernelFunc,var = sigma_n^2)
+
+prediction <- predict(gp, day)
+
+visualize(mean = prediction, variance = pgp$variance[time], observations = observations, xstar = time)
+```
+
+The main cons of the second model (black line) is that it doesn’t consider long-term temperature changes, since it only uses the day of the current year to predict the temperature. As can be seen in the figure above, this model assumes that the temperature is the same on a specific date every year. For example, this model doesn’t consider global warming.
+Conversely, the first model (red line) is able to cover temperature differences between different years. How- 11
+ever, the chances of overfitting is larger with this model compared to the second one.
+
+```{r}
+# 2.5
+
+
+
+kernelFunc <- periodicKernel(sigmaF = 20, ell1 = 1, ell2 = 10, d = 365/sd(time) )
+
+gp <- gausspr(x = time, y = temperature,kernel = kernelFunc,var = sigma_n^2)
+
+prediction <- predict(gp,time)
+
+visualize(mean = prediction, variance = pgp$variance[time], observations = observations, xstar = time)
+
+#lines(x=time, y = prediction, col = "yellow")
+
+```
+
+
+```{r}
+library(kernlab)
+library(AtmRay)
+
+data <- read.csv("https://raw.githubusercontent.com/STIMALiU/AdvMLCourse/master/GaussianProcess/Code/banknoteFraud.csv", header=FALSE, sep=",") 
+names(data) <- c("varWave","skewWave","kurtWave","entropyWave","fraud")
+data[,5] <- as.factor(data[,5])
+set.seed(111);
+
+SelectTraining <- sample(1:dim(data)[1], size = 1000,replace = FALSE)
+
+trainData <- data[SelectTraining,]
+testData <- data[-SelectTraining,]
+
+
+# 3.1
+
+# Fit gaussian process of how fraud depends on varWave and skewWave
+gpFit <- gausspr(fraud ~ varWave + skewWave, data = trainData)
+
+varWaves <- seq(from = min(trainData$varWave),
+          to = max(trainData$varWave),
+          length = 100)
+
+skewWaves <- seq(from = min(trainData$skewWave),
+          to = max(trainData$skewWave),
+          length = 100)
+
+gridPoints <- meshgrid(varWaves, skewWaves)
+gridPoints <- cbind(c(gridPoints$x), c(gridPoints$y))
+gridPoints <- data.frame(gridPoints)
+names(gridPoints) <- c("varWave", "skewWave")
+
+# Based on the fitted gaussian process, get the probabilities of not fraud/fraud?
+grid_prediction <- predict(gpFit,gridPoints, type="probabilities")
+
+# Visualize 3d plot
+contour(x = varWaves,y = skewWaves,z = matrix(grid_prediction[,2], 100, byrow = TRUE), 20,xlab = "varWave", ylab = "skewWave", main = 'Prob(fraud)')
+
+frauds <- which(trainData$fraud == 1)
+
+
+# Add data points of fraud/non-fraud by varWave and skewWave
+points(x = trainData$varWave[frauds],
+       y = trainData$skewWave[frauds],
+       col = "blue")
+points(x = trainData$varWave[-frauds],
+       y = trainData$skewWave[-frauds],
+       col = "red")
+
+# Preddict frauds in the trainData, based on the fitted gaussian process
+prediction <- predict(gpFit, trainData)
+
+confusion_matrix <- table(prediction, trainData$fraud)
+print(confusion_matrix)
+
+accuracy_train <- sum(diag(confusion_matrix))/sum(confusion_matrix)
+```
+
+
+```{r}
+# 3.2
+
+prediction <- predict(gpFit, testData)
+
+confusion_matrix <- table(prediction, testData$fraud)
+print(confusion_matrix)
+
+accuracy_test <- sum(diag(confusion_matrix))/sum(confusion_matrix)
+```
+
+
+```{r}
+
+# 3.3
+
+gpFit <- gausspr(fraud ~., data = trainData)
+
+prediction <- predict(gpFit, trainData)
+
+confusion_matrix <- table(prediction, trainData$fraud)
+print(confusion_matrix)
+
+accuracy_all_train <- sum(diag(confusion_matrix))/sum(confusion_matrix)
+
+
+prediction <- predict(gpFit, testData)
+
+confusion_matrix <- table(prediction, testData$fraud)
+print(confusion_matrix)
+
+accuracy_all_test <- sum(diag(confusion_matrix))/sum(confusion_matrix)
+
+```

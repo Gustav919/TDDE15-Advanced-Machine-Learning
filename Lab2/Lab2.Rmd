@@ -1,0 +1,160 @@
+---
+title: "R Notebook"
+output:
+  word_document: default
+  html_notebook: default
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+
+library(HMM)
+
+# Probabilty matrix of the hiddes states. Each row 't' contains the probability distribution of the state in next step: P( Z^t+1|Z^t )
+transition_prob <-   c(0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0.5,
+                       0.5, 0.5, 0, 0, 0, 0, 0, 0, 0, 0,
+                       0, 0.5, 0.5, 0, 0, 0, 0, 0, 0, 0,
+                       0, 0, 0.5, 0.5, 0, 0, 0, 0, 0, 0,
+                       0, 0, 0, 0.5, 0.5, 0, 0, 0, 0, 0,
+                       0, 0, 0, 0, 0.5, 0.5, 0, 0, 0, 0,
+                       0, 0, 0, 0, 0, 0.5, 0.5, 0, 0, 0,
+                       0, 0, 0, 0, 0, 0, 0.5, 0.5, 0, 0,
+                       0, 0, 0, 0, 0, 0, 0, 0.5, 0.5, 0,
+                       0, 0, 0, 0, 0, 0, 0, 0, 0.5, 0.5)
+
+transition_prob <- matrix(data = transition_prob, nrow = 10, ncol = 10)
+
+# Probabilty matrix of the observation states. Each row 't' contains the probability distribution of state observed: P( X^t|Z^t )
+observation_prob <- c(0.2, 0.2, 0.2, 0, 0, 0, 0, 0, 0.2, 0.2,
+                     0.2, 0.2, 0.2, 0.2, 0, 0, 0, 0, 0, 0.2,
+                     0.2, 0.2, 0.2, 0.2, 0.2, 0, 0, 0, 0, 0,
+                     0, 0.2, 0.2, 0.2, 0.2, 0.2, 0, 0, 0, 0,
+                     0, 0, 0.2, 0.2, 0.2, 0.2, 0.2, 0, 0, 0,
+                     0, 0, 0, 0.2, 0.2, 0.2, 0.2, 0.2, 0, 0,
+                     0, 0, 0, 0, 0.2, 0.2, 0.2, 0.2, 0.2, 0,
+                     0, 0, 0, 0, 0, 0.2, 0.2, 0.2, 0.2, 0.2,
+                     0.2, 0, 0, 0, 0, 0, 0.2, 0.2, 0.2, 0.2,
+                     0.2, 0.2, 0, 0, 0, 0, 0, 0.2, 0.2, 0.2)
+observation_prob <- matrix(data = observation_prob,
+                          nrow = 10,
+                          ncol = 10)
+
+states <- rep(1:10)
+#states <- c(1,2,3,4,5,6,7,8,9,10)
+observations <- rep(1:10)
+
+startProbs <- rep(0.1,10)
+
+HMM <- initHMM(States = states, Symbols = observations, startProbs = startProbs, transProbs = transition_prob, emissionProbs = observation_prob)
+
+```
+
+
+
+```{r}
+steps <- 100
+HMM.sim <- simHMM(hmm = HMM,
+                  length = steps)
+```
+
+
+```{r}
+get_alpha <- function(possible_states, trans_prob_matrix, obs_prob_matrix, obs, previous_alpha) {
+  alpha <- NA
+  
+  for (state in possible_states)
+  {
+    #Probabilities of observations 'X_t', given the state 'Z_t' 
+    obs_prob <- obs_prob_matrix[state,obs]
+  
+  #Probabilities of current states, given probabilities of obervations in last time step & probabilities of transistions
+    state_prob <- sum(
+      sapply(possible_states, function(z) {
+        previous_alpha[z] * trans_prob_matrix[z, state]
+        }))
+    
+    alpha[state] <- obs_prob * state_prob 
+  }
+  return (alpha);
+}
+###############################################################################
+
+get_beta <- function(possible_states, trans_prob_matrix, obs_prob_matrix, obs_next, beta_next) {
+  
+  beta <- NA
+  
+  for (state in possible_states) {
+    
+    #Probabilities of current states, given probabilities of obersvations in next time step & probabilities of transitions
+    beta[state] <- sum(
+      sapply(possible_states, function(z) {
+      beta_next[z] * obs_prob_matrix[z, obs_next] * trans_prob_matrix[state,z]
+      })
+    )
+  }
+  return (beta)
+}
+###############################################################################
+
+forward_backward <- function(possible_states, observations, trans_prob_matrix, obs_prob_matrix)
+{
+  T <- length(observations)
+  alpha <- matrix(NA, nrow = T, ncol = 10)
+  beta <- matrix(NA, nrow = T, ncol = 10)
+  
+  #P(Z^0)
+  init <- rep(0.1, 10)
+  
+  alpha[1, ] <- obs_prob_matrix[, observations[1]] * init
+  beta[T, ] <- 1
+  
+  for (t in 2:T) {
+    alpha[t,] <- get_alpha(possible_states = possible_states, trans_prob_matrix = trans_prob_matrix, obs_prob_matrix=obs_prob_matrix, obs = observations[t], previous_alpha = alpha[t-1,])
+  }
+  
+  for (t in (T-1):1) {
+    beta[t, ] <- get_beta(possible_states = possible_states, trans_prob_matrix = trans_prob_matrix, obs_prob_matrix = obs_prob_matrix, obs_next = observations[t+1], beta_next = beta[t+1,]) 
+  }
+  
+  return (list(alpha=alpha,beta=beta))
+}
+###############################################################################
+filtering <- function(alpha, beta)
+{
+  T <- nrow(alpha)
+  result <- matrix(NA, nrow = T, ncol = 10)
+  for (t in 1:T)
+  {
+    result[t,] <- alpha[t,]/(sum(alpha[t,]))
+  }
+  return (result)
+}
+###############################################################################
+smoothing <- function(alpha, beta)
+{
+  T <- nrow(alpha)
+  result <- matrix(NA, nrow = T, ncol = 10)
+  for (t in 1:T)
+  {
+   result[t,] <- alpha[t,]*beta[t,]/(sum(alpha[t,]*beta[t,]))
+  }
+  return (result)
+}
+###############################################################################
+fb <- forward_backward(possible_states = 1:10, observations = HMM.sim$observation, trans_prob_matrix = transition_prob, obs_prob_matrix = observation_prob)
+
+
+#filter <-filtering(fb$alpha,fb$beta)
+  
+```
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+

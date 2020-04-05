@@ -1,0 +1,176 @@
+---
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+```{r}
+set.seed(2019)
+
+particle_filter <- function(correction = TRUE, sd_emission = 1)
+{
+for (t in 1:T)
+{
+    for (m in 1:M)
+    {
+      
+      # Sample from beliefs and weights in last time step
+      
+      if (t!=1)
+      {
+        samples[t,m] <<- sample(x=beliefs[t-1,],size=1,replace=TRUE,prob = weights[t-1,])
+      } else {
+        samples[t,m] <<- runif(n = 1,min = 0,max = 100)
+      }
+      
+      # Predict the state in next step according to transition model
+      beliefs[t,m] <<- rnorm(n = 1, mean = samples[t,m] + sample(x = -1:1, size = 1), sd = 1)
+      
+      # Calculate weights of how well the belief corresponds to the observation
+      weights[t,m] <<- dnorm( x = observations[t], mean = beliefs[t,m], sd = sd_emission)
+    }
+ 
+    if(!correction)
+    {
+      weights[t,] <<- 1
+    }
+  
+      # Normalize weights
+    weights[t,] <<- weights[t,]/sum(weights[t,])
+    
+      # Calculate the expected value/prediction 
+  predictions[t] <<- sum(beliefs[t,] * weights[t,])
+}
+  
+  cat("Average error with: ", mean(abs(predictions-states)),"\n\n")
+  
+cat("Expected location in first step: \n", predictions[1], "\n")
+cat("True location in first step: \n", states[1], "\n\n")
+plot(density(beliefs[1,]))
+
+
+cat("Expected location in step 33: \n", predictions[33], "\n")
+cat("True location in step 33: \n", states[33], "\n\n")
+plot(density(beliefs[33,]))
+
+cat("Expected location in step 67: \n", predictions[67], "\n")
+cat("True location in step 67: \n", states[67], "\n\n")
+plot(density(beliefs[67,]))
+
+cat("Expected location in last step: \n", predictions[T], "\n")
+cat("True location in last step: \n", states[T], "\n\n")
+plot(density(beliefs[T,]))
+}
+```
+
+```{r}
+
+#AMN
+T<-100
+mu_0<-50
+Sigma_0<-10
+R<-1
+Q<-5
+
+x<-vector(length=T)
+z<-vector(length=T)
+err<-vector(length=T)
+
+for(t in 1:T){
+  x[t]<-ifelse(t==1,rnorm(1,mu_0,Sigma_0),x[t-1]+1+rnorm(1,0,R))
+  z[t]<-x[t]+rnorm(1,0,Q)
+}
+
+mu<-mu_0
+Sigma<-Sigma_0*Sigma_0 # KF uses covariances
+for(t in 2:2){
+    pre_mu<-mu+1
+  pre_Sigma<-Sigma+R*R # KF uses covariances
+  K<-pre_Sigma/(pre_Sigma+Q*Q) # KF uses covariances
+  mu<-pre_mu+K*(z[t]-pre_mu)
+  Sigma<-(1-K)*pre_Sigma
+  
+  err[t]<-abs(x[t]-mu)
+  
+  #cat("t: ",t,", x_t: ",x[t],", E[x_t]: ",mu," , error: ",err[t],"\n")
+  #flush.console()
+}
+
+mean(err[2:T])
+sd(err[2:T])
+```
+
+```{r}
+################################################################
+# TASK 1
+################################################################
+
+T <- 100
+M <- 100
+
+# Beliefs represented by particles. These are obtained by sampling from the corrected beliefs in the last timestep and the transition distribution 
+beliefs <- matrix(NA,T,M)
+
+# Beliefs corrected by observations
+samples <- matrix(NA,T,M)
+
+states <- matrix(NA,T,1)
+observations <- matrix(NA,T,1)
+predictions <- matrix(NA,T,1)
+
+# Weights corresponding to P(X_t|Z_t)
+weights <- matrix(NA,T,M)
+
+# Set initial state
+states[1] <- runif(n = 1,min = 0,max = 100)
+
+# Simulate the rest of the states
+for (t in 2:T)
+{
+  states[t] <- rnorm(n = 1, mean = states[t-1] + sample(x = 0:2, size = 1), sd = 1)
+}
+
+# Simulate the observations
+for (t in 1:T)
+{
+  observations[t] <- rnorm(n = 1, mean = (states[t] + sample(x = -1:1, size = 1)), sd = 1)
+}
+
+particle_filter()
+
+```
+```{r}
+
+# TASK 2 (A)
+sd_emission <-5
+
+for (t in 1:T)
+{
+  observations[t] <- rnorm(n = 1, mean = states[t] + sample(x = -1:1, size = 1), sd = sd_emission)
+}
+
+particle_filter(sd_emission = sd_emission)
+
+```
+
+```{r}
+# TASK 2 (B)
+sd_emission <-50
+for (t in 1:T)
+{
+  observations[t] <- rnorm(n = 1, mean = states[t] + sample(x = -1:1, size = 1), sd = sd_emission)
+}
+
+particle_filter(sd_emission = sd_emission)
+
+```
+
+Since the observations become more uncertain, the predictions becomes worse. This is confirmed by the average error, with increases significantly.
+
+```{r}
+# TASK 3
+particle_filter(FALSE)
+```
+When no corrections are made, the initial prediction becomes the average of the first particles. The rest of the predictions, no matter what the observations are, are made using the transition model. This results in that the prediction error is rather constant from the first prediction to the last, as shown in the output.
+
